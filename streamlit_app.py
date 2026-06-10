@@ -37,16 +37,20 @@ st.markdown("""
     margin-bottom: 0.8rem;
     border-left: 4px solid #007bff;
 }
-.cost-box {
-    background: linear-gradient(135deg, #007bff, #0056b3);
-    color: white;
-    padding: 1.5rem;
-    border-radius: 0.75rem;
-    text-align: center;
-    margin-bottom: 1rem;
-}
 </style>
 """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────
+# CHAVE DA API — lida dos Secrets do Streamlit
+# ─────────────────────────────────────────
+try:
+    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+except (KeyError, FileNotFoundError):
+    st.error(
+        "❌ Chave da API OpenAI não encontrada. "
+        "Configure `OPENAI_API_KEY` em **Settings → Secrets** no Streamlit Cloud."
+    )
+    st.stop()
 
 # ─────────────────────────────────────────
 # CONSTANTES
@@ -85,12 +89,12 @@ def load_vehicle_detector():
 def get_best_vehicle_box(det_output, threshold=0.3):
     vehicle_classes = [3, 4, 6, 8]
     best_score = 0
-    best_bbox = None
+    best_bbox  = None
     for i in range(len(det_output['boxes'])):
         label = det_output['labels'][i].item()
         score = det_output['scores'][i].item()
         if label in vehicle_classes and score > best_score and score > threshold:
-            best_bbox = det_output['boxes'][i]
+            best_bbox  = det_output['boxes'][i]
             best_score = score
     return best_bbox, best_score
 
@@ -119,15 +123,15 @@ def image_to_base64(pil_image: Image.Image) -> str:
 def calculate_costs(damages: list, car_value: float, car_age: int) -> tuple:
     age_factor = max(0.05, min(car_age, 10) / 10.0)
     total_cost = 0
-    details = []
+    details    = []
+    severity_map = {'low': 0.3, 'medium': 0.6, 'high': 1.0}
     for d in damages:
-        dtype  = d.get('type', 'scratch')
-        score  = float(d.get('confidence', 0.5))
-        factor = DAMAGE_FACTORS.get(dtype, 0.2)
-        severity_map = {'low': 0.3, 'medium': 0.6, 'high': 1.0}
+        dtype           = d.get('type', 'scratch')
+        score           = float(d.get('confidence', 0.5))
+        factor          = DAMAGE_FACTORS.get(dtype, 0.2)
         severity_factor = severity_map.get(d.get('severity', 'medium'), 0.6)
-        cost = car_value * factor * score * severity_factor * age_factor
-        total_cost += cost
+        cost            = car_value * factor * score * severity_factor * age_factor
+        total_cost      += cost
         details.append({
             'type':     dtype,
             'label':    DAMAGE_LABELS_PT.get(dtype, dtype.replace('_', ' ').title()),
@@ -141,8 +145,8 @@ def calculate_costs(damages: list, car_value: float, car_age: int) -> tuple:
 # ─────────────────────────────────────────
 # ANÁLISE GPT-4o VISION
 # ─────────────────────────────────────────
-def analyze_damage_gpt4o(image: Image.Image, api_key: str, car_model: str, car_year: int) -> dict:
-    client = OpenAI(api_key=api_key)
+def analyze_damage_gpt4o(image: Image.Image, car_model: str, car_year: int) -> dict:
+    client  = OpenAI(api_key=OPENAI_API_KEY)
     img_b64 = image_to_base64(image)
 
     prompt = f"""Você é um especialista em avaliação de danos veiculares para seguradoras.
@@ -180,7 +184,7 @@ Se não houver veículo na imagem, retorne vehicle_detected como false."""
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/jpeg;base64,{img_b64}",
+                            "url":    f"data:image/jpeg;base64,{img_b64}",
                             "detail": "high"
                         }
                     },
@@ -196,17 +200,16 @@ Se não houver veículo na imagem, retorne vehicle_detected como false."""
     )
 
     raw = response.choices[0].message.content.strip()
-    # Remove possíveis blocos markdown ```json ... ```
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    
+
     result = json.loads(raw.strip())
     result['_usage'] = {
         'input_tokens':  response.usage.prompt_tokens,
         'output_tokens': response.usage.completion_tokens,
-        'cost_usd':      (response.usage.prompt_tokens * 2.50 / 1_000_000) +
+        'cost_usd':      (response.usage.prompt_tokens  * 2.50  / 1_000_000) +
                          (response.usage.completion_tokens * 10.00 / 1_000_000)
     }
     return result
@@ -216,20 +219,11 @@ Se não houver veículo na imagem, retorne vehicle_detected como false."""
 # ─────────────────────────────────────────
 st.title("🚗 A.I. AutoInspector")
 st.subheader("Detecção Inteligente de Danos Veiculares — Powered by GPT-4o Vision")
+st.success("🔐 API Key carregada com segurança via Streamlit Secrets")
 
 # ── SIDEBAR ──────────────────────────────
 with st.sidebar:
     st.header("⚙️ Configurações")
-
-    st.subheader("🔑 API OpenAI")
-    api_key = st.text_input(
-        "Chave da API (OPENAI_API_KEY)",
-        type="password",
-        placeholder="sk-...",
-        help="Sua chave da API OpenAI. Não é armazenada."
-    )
-
-    st.divider()
 
     st.subheader("🚘 Dados do Veículo")
     car_model_name = st.text_input("Modelo", "Toyota Corolla")
@@ -239,8 +233,8 @@ with st.sidebar:
     st.divider()
 
     st.subheader("🔬 Detecção de Veículo")
-    use_vehicle_detection = st.toggle("Usar Faster R-CNN para recortar veículo", value=True)
-    det_threshold = st.slider("Confiança mínima", 0.1, 0.9, 0.3, 0.05)
+    use_vehicle_detection = st.toggle("Recortar veículo com Faster R-CNN", value=True)
+    det_threshold         = st.slider("Confiança mínima da detecção", 0.1, 0.9, 0.3, 0.05)
 
     st.divider()
     st.caption(f"Dispositivo PyTorch: `{DEVICE}`")
@@ -261,18 +255,10 @@ if uploaded_file is not None:
         st.image(image, caption="Imagem Original", use_container_width=True)
 
     if st.button("🔍 Analisar Danos com GPT-4o"):
-
-        # Validar API key
-        if not api_key or not api_key.startswith("sk-"):
-            st.error("❌ Insira uma chave de API OpenAI válida no painel lateral.")
-            st.stop()
-
         with st.status("Processando imagem...", expanded=True) as status:
 
             # ── ETAPA 1: Detecção do veículo ──
             img_to_analyze = image
-            cropped_img    = None
-            confidence     = 0.0
 
             if use_vehicle_detection:
                 st.write("🚗 Detectando veículo com Faster R-CNN...")
@@ -286,12 +272,11 @@ if uploaded_file is not None:
                 best_bbox, confidence = get_best_vehicle_box(det_output, threshold=det_threshold)
 
                 if best_bbox is not None:
-                    bbox_np      = best_bbox.detach().cpu().numpy().astype(int)
-                    adj_bbox     = adjust_bbox(bbox_np, image.size[0], image.size[1])
-                    cropped_img  = image.crop(adj_bbox)
-                    annotated    = draw_bbox_on_image(image, adj_bbox)
+                    bbox_np        = best_bbox.detach().cpu().numpy().astype(int)
+                    adj_bbox       = adjust_bbox(bbox_np, image.size[0], image.size[1])
+                    cropped_img    = image.crop(adj_bbox)
+                    annotated      = draw_bbox_on_image(image, adj_bbox)
                     img_to_analyze = cropped_img
-
                     with col2:
                         st.image(
                             annotated,
@@ -299,27 +284,27 @@ if uploaded_file is not None:
                             use_container_width=True
                         )
                 else:
-                    st.warning("⚠️ Veículo não detectado pelo Faster R-CNN. Enviando imagem completa para o GPT-4o.")
+                    st.warning("⚠️ Veículo não detectado pelo R-CNN. Enviando imagem completa para o GPT-4o.")
                     with col2:
-                        st.image(image, caption="Imagem completa (sem crop)", use_container_width=True)
+                        st.image(image, caption="Imagem completa", use_container_width=True)
             else:
                 with col2:
-                    st.image(image, caption="Imagem completa (detecção desativada)", use_container_width=True)
+                    st.image(image, caption="Imagem completa (crop desativado)", use_container_width=True)
 
             # ── ETAPA 2: Análise GPT-4o ──
             st.write("🤖 Analisando danos com GPT-4o Vision...")
             try:
-                car_age    = 2026 - car_year
-                gpt_result = analyze_damage_gpt4o(img_to_analyze, api_key, car_model_name, car_year)
+                car_age              = 2026 - car_year
+                gpt_result           = analyze_damage_gpt4o(img_to_analyze, car_model_name, car_year)
 
                 if not gpt_result.get('vehicle_detected', True):
                     st.error("❌ O GPT-4o não identificou um veículo na imagem.")
                     status.update(label="Falha na análise", state="error")
                     st.stop()
 
-                damages             = gpt_result.get('damages', [])
+                damages              = gpt_result.get('damages', [])
                 repair_cost, details = calculate_costs(damages, car_value, car_age)
-                usage               = gpt_result.get('_usage', {})
+                usage                = gpt_result.get('_usage', {})
 
                 status.update(label="✅ Análise concluída!", state="complete")
 
@@ -327,36 +312,28 @@ if uploaded_file is not None:
                 st.divider()
                 st.subheader(f"📋 Relatório — {car_model_name} ({car_year})")
 
-                # Resumo do GPT
                 if gpt_result.get('summary'):
                     st.info(f"💬 **Avaliação GPT-4o:** {gpt_result['summary']}")
 
-                # Métricas principais
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric("💰 Custo Estimado", f"${repair_cost:,.2f}")
+                m1.metric("💰 Custo Estimado",    f"${repair_cost:,.2f}")
                 m2.metric("🔢 Danos Encontrados", len(details))
-                m3.metric("📊 Condição Geral", gpt_result.get('overall_condition', 'N/A').upper())
-                m4.metric("💵 Custo da Chamada API", f"${usage.get('cost_usd', 0):.5f}")
+                m3.metric("📊 Condição Geral",    gpt_result.get('overall_condition', 'N/A').upper())
+                m4.metric("💵 Custo da Chamada",  f"${usage.get('cost_usd', 0):.5f}")
 
                 st.divider()
-                res_col1, res_col2 = st.columns([1, 1])
+                res_col1, res_col2 = st.columns(2)
 
                 with res_col1:
                     if details:
                         st.write("#### 🔍 Detalhes dos Danos")
-                        severity_colors = {
-                            'low':    '#28a745',
-                            'medium': '#ffc107',
-                            'high':   '#dc3545'
-                        }
-                        severity_labels = {
-                            'low': 'Leve', 'medium': 'Médio', 'high': 'Grave'
-                        }
+                        severity_colors = {'low': '#28a745', 'medium': '#ffc107', 'high': '#dc3545'}
+                        severity_labels = {'low': 'Leve', 'medium': 'Médio', 'high': 'Grave'}
                         for d in details:
                             color = severity_colors.get(d['severity'], '#007bff')
                             sev   = severity_labels.get(d['severity'], d['severity'])
                             st.markdown(f"""
-                            <div class="damage-card" style="border-left-color: {color};">
+                            <div class="damage-card" style="border-left-color:{color};">
                                 <strong>{d['label']}</strong>
                                 &nbsp;<span style="color:{color};font-weight:bold;">[{sev}]</span><br>
                                 📍 <em>{d['location']}</em><br>
@@ -365,14 +342,14 @@ if uploaded_file is not None:
                             </div>
                             """, unsafe_allow_html=True)
                     else:
-                        st.success("✅ Nenhum dano identificado pelo GPT-4o!")
+                        st.success("✅ Nenhum dano identificado!")
 
                 with res_col2:
                     if details:
                         fig, ax = plt.subplots(figsize=(5, 5))
                         labels = [d['label'] for d in details]
                         costs  = [d['cost']  for d in details]
-                        colors = ['#dc3545', '#ffc107', '#007bff', '#28a745', '#6f42c1', '#fd7e14']
+                        colors = ['#dc3545','#ffc107','#007bff','#28a745','#6f42c1','#fd7e14']
                         ax.pie(
                             costs,
                             labels=labels,
@@ -383,7 +360,6 @@ if uploaded_file is not None:
                         ax.set_title("Distribuição dos Custos de Reparo")
                         st.pyplot(fig)
 
-                    # Tokens usados
                     with st.expander("📊 Uso de tokens desta chamada"):
                         st.write(f"- Tokens de entrada: `{usage.get('input_tokens', 0)}`")
                         st.write(f"- Tokens de saída: `{usage.get('output_tokens', 0)}`")
