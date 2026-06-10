@@ -5,7 +5,3 @@ numpy
 Pillow
 matplotlib
 opencv-python-headless
-yapf==0.40.1
-openmim
-mmcv-full==1.7.0
-mmdet==2.25.1
