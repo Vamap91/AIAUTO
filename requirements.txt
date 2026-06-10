@@ -4,8 +4,8 @@ torchvision
 numpy
 Pillow
 matplotlib
-# MMDetection e dependências (serão instaladas via packages.txt ou comandos personalizados)
-# Para o Streamlit Cloud, é melhor usar uma abordagem de instalação via shell no app se necessário,
-# mas aqui listamos as básicas.
 opencv-python-headless
 yapf==0.40.1
+openmim
+mmcv-full==1.7.0
+mmdet==2.25.1
