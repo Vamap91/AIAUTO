@@ -313,7 +313,7 @@ with st.sidebar:
     st.divider()
     st.caption(f"Dispositivo PyTorch: `{DEVICE}`")
     st.caption("Modelo de análise: `gpt-4o` (Vision)")
-    st.caption("Custo estimado: ~R$0,03–R$0,06 por análise")
+    st.caption("Custo estimado: 3 Centavos até 6 Centavos por análise")
     st.caption("Valores de reparo baseados no mercado brasileiro")
 
 # ── UPLOAD ───────────────────────────────
